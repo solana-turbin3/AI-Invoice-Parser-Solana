@@ -5,13 +5,13 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-invoice_claim = "Cu675QqjfKaZiFDsiwJA3Hpa1r9MHdwfLfNKwhyp7TKo"
+invoice_claim = "5zUiSUHNQCtxcSYtrbx7QqxCHLFBZy6Pgxt6w1bLKa9u"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Devnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

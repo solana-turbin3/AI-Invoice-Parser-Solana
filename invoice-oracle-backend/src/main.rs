@@ -84,7 +84,7 @@ pub enum RequestStatus {
     Completed,
 }
 
-const PROGRAM_ID: &str = "Cu675QqjfKaZiFDsiwJA3Hpa1r9MHdwfLfNKwhyp7TKo";
+const PROGRAM_ID: &str = "5zUiSUHNQCtxcSYtrbx7QqxCHLFBZy6Pgxt6w1bLKa9u";
 const RPC_URL: &str = "https://api.devnet.solana.com";
 
 #[tokio::main]
