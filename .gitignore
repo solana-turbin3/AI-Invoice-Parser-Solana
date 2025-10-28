@@ -1,0 +1,53 @@
+# Environment variables
+**/.env
+.env
+*.env
+
+# Target directories (Rust builds)
+/target
+**/target/
+
+# Node modules
+**/node_modules/
+
+# Anchor build artifacts
+**/.anchor
+**/test-ledger/
+
+# IDE files
+.idea/
+**/.vscode/
+*.swp
+*.swo
+*~
+
+# Cargo lock files (optional - keep for binaries, ignore for libraries)
+# Cargo.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Solana keypairs (IMPORTANT - never commit private keys!)
+*.json
+!package.json
+!tsconfig.json
+!package-lock.json
+
+# Or be more specific for keypairs:
+*-keypair.json
+*.keypair.json
+wallet.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+
+# Test artifacts
+.prettierignore
