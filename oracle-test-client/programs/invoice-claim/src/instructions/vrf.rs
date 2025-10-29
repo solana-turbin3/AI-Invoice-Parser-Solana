@@ -1,0 +1,117 @@
+use anchor_lang::prelude::*;
+use ephemeral_vrf_sdk::anchor::vrf;
+use ephemeral_vrf_sdk::instructions::{create_request_randomness_ix, RequestRandomnessParams};
+use ephemeral_vrf_sdk::types::SerializableAccountMeta;
+use crate::CALLBACK_VRF_DISCRIMINATOR;
+use crate::state::*;
+
+    /// STEP 1: Request randomness to decide if invoice should be audited
+    pub fn request_invoice_audit_vrf(ctx: Context<RequestInvoiceAuditVrf>, client_seed: u8) -> Result<()> {
+        let invoice = &ctx.accounts.invoice_account;
+
+        require!(
+            invoice.status == InvoiceStatus::Validated,
+            InvoiceError::InvalidStatus
+        );
+
+        msg!(
+            "Requesting VRF randomness for invoice: {} | vendor: {}",
+            invoice.key(),
+            invoice.vendor_name
+        );
+
+        let ix = create_request_randomness_ix(RequestRandomnessParams {
+            payer: ctx.accounts.payer.key(),
+            oracle_queue: ctx.accounts.oracle_queue.key(),
+            callback_program_id: crate::ID,
+            callback_discriminator: CALLBACK_VRF_DISCRIMINATOR.to_vec(),
+            caller_seed: [client_seed; 32],
+            accounts_metas: Some(vec![SerializableAccountMeta {
+                pubkey: ctx.accounts.invoice_account.key(),
+                is_signer: false,
+                is_writable: true,
+            },
+            SerializableAccountMeta {
+                pubkey: ctx.accounts.org_config.key(),
+                is_signer: false,
+                is_writable: false
+            }]),
+            ..Default::default()
+        });
+
+        // Dispatch request to oracle
+        ctx.accounts.invoke_signed_vrf(&ctx.accounts.payer.to_account_info(), &ix)?;
+
+        msg!("VRF randomness request sent.");
+        Ok(())
+    }
+
+    /// STEP 2: Callback once randomness is ready
+    pub fn callback_invoice_vrf(ctx: Context<CallbackInvoiceVrf>, randomness: [u8; 32]) -> Result<()> {
+        msg!("Received VRF callback |deciding audit outcome...");
+
+        let invoice = &mut ctx.accounts.invoice_account;
+        let org_config = &ctx.accounts.org_config;
+
+        // Convert bytes → number
+        let random_value = u64::from_le_bytes(randomness[..8].try_into().unwrap());
+        let threshold = org_config.audit_rate_bps as u64;
+
+        // 10000 = 100% in basis points
+        let audit_selected = random_value % 10_000 < threshold;
+
+        // Update status
+        invoice.status = if audit_selected {
+            InvoiceStatus::AuditPending
+        } else {
+            InvoiceStatus::ReadyForPayment
+        };
+
+        msg!(
+            "Invoice {} | Audit Selected: {} | Random Value: {} | Threshold: {} bps",
+            invoice.vendor_name,
+            audit_selected,
+            random_value,
+            threshold
+        );
+        Ok(())
+    }
+
+    
+#[vrf]
+#[derive(Accounts)]
+pub struct RequestInvoiceAuditVrf<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"org_config", org_config.authority.as_ref()],
+        bump
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    #[account(
+        mut,
+        seeds = [b"invoice", invoice_account.authority.as_ref()],
+        bump
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+
+    /// CHECK: Oracle queue reference
+    #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
+    pub oracle_queue: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CallbackInvoiceVrf<'info> {
+    /// Ensures call comes from VRF program identity
+    #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
+    pub vrf_program_identity: Signer<'info>,
+
+    #[account(mut)]
+    pub org_config: Account<'info, OrgConfig>,
+
+    #[account(mut)]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+}

@@ -67,6 +67,8 @@ pub enum RequestStatus {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
 pub enum InvoiceStatus {
+    ReadyForPayment,
+    AuditPending,
     Validated,
     InEscrow,
     Paid,
