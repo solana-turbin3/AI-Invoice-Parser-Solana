@@ -13,7 +13,8 @@ pub struct InvoiceRequest {
 #[account]
 #[derive(InitSpace)]
 pub struct InvoiceAccount {
-    pub authority: Pubkey,
+    pub authority: Pubkey,              // Invoice owner
+    pub vendor: Pubkey,                 // Links to VendorAccount
     #[max_len(50)]
     pub vendor_name: String,
     pub amount: u64,
@@ -24,6 +25,7 @@ pub struct InvoiceAccount {
     pub timestamp: i64,
 }
 
+//A singleton state that manages the full protocol
 #[account]
 #[derive(InitSpace)]
 pub struct OrgConfig {
@@ -33,11 +35,26 @@ pub struct OrgConfig {
     pub mint: Pubkey,
     pub per_invoice_cap: u64,
     pub daily_cap: u64,
-    pub audit_rate_bps: u16,
+    pub daily_spent: u64,               // Track daily spending
+    pub last_reset_day: i64,            // Last day caps were reset
+    pub audit_rate_bps: u16,            // Basis points (e.g., 500 = 5%)
     pub paused: bool,
     pub invoice_counter: u64,
-    pub bump: u8,
     pub version: u8,
+}
+
+
+#[account]
+#[derive(InitSpace)]
+pub struct VendorAccount {
+    pub org: Pubkey,                    // Links to OrgConfig
+    #[max_len(50)]
+    pub vendor_name: String,            // Vendor identifier (matches invoice.vendor_name)
+    pub wallet: Pubkey,                 // Where to send payments
+    pub total_paid: u64,                // Lifetime payment tracking
+    pub last_payment: i64,              // Unix timestamp of last payment
+    pub is_active: bool,                // Can be disabled to block payments
+    pub currency_preference: Pubkey,    // Preferred mint (for multi-currency)
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -59,6 +76,8 @@ pub enum InvoiceError {
     InvalidStatus,
     #[msg("Payment is overdue")]
     PaymentOverdue,
+    #[msg("Payment is not yet due")]
+    PaymentNotDue,
     #[msg("Organization is paused")]
     OrgPaused,
     #[msg("Per-invoice cap exceeded")]
@@ -67,6 +86,20 @@ pub enum InvoiceError {
     Unauthorized,
     #[msg("Wrong mint for this organization")]
     WrongMint,
+    #[msg("Invalid amount")]
+    InvalidAmount,
+    #[msg("Invalid vendor name")]
+    InvalidVendor,
+    #[msg("Vendor is not active")]
+    VendorInactive,
+    #[msg("Due date must be in the future")]
+    InvalidDueDate,
+    #[msg("Arithmetic overflow")]
+    Overflow,
+    #[msg("Invalid audit rate (must be 0-10000 bps)")]
+    InvalidAuditRate,
+    #[msg("Wrong organization")]
+    WrongOrg,
 }
 
 // ========== ACCOUNT CONTEXTS (moved here to keep only state + instructions) ==========
@@ -179,8 +212,6 @@ pub struct OrgInit<'info> {
         init,
         payer = authority,
         space = 8 + OrgConfig::INIT_SPACE,
-        seeds = [b"org_config", authority.key().as_ref()],
-        bump
     )]
     pub org_config: Account<'info, OrgConfig>,
 
@@ -193,8 +224,7 @@ pub struct OrgInit<'info> {
 pub struct SetCaps<'info> {
     #[account(
         mut,
-        seeds = [b"org_config", authority.key().as_ref()],
-        bump
+        has_one = authority @ InvoiceError::Unauthorized,
     )]
     pub org_config: Account<'info, OrgConfig>,
     pub authority: Signer<'info>,
@@ -204,8 +234,7 @@ pub struct SetCaps<'info> {
 pub struct SetPause<'info> {
     #[account(
         mut,
-        seeds = [b"org_config", authority.key().as_ref()],
-        bump
+        has_one = authority @ InvoiceError::Unauthorized,
     )]
     pub org_config: Account<'info, OrgConfig>,
     pub authority: Signer<'info>,
@@ -215,8 +244,7 @@ pub struct SetPause<'info> {
 pub struct SetOracleSigner<'info> {
     #[account(
         mut,
-        seeds = [b"org_config", authority.key().as_ref()],
-        bump
+        has_one = authority @ InvoiceError::Unauthorized,
     )]
     pub org_config: Account<'info, OrgConfig>,
     pub authority: Signer<'info>,
@@ -227,9 +255,7 @@ pub struct SetOracleSigner<'info> {
 #[derive(Accounts)]
 pub struct FundEscrow<'info> {
     #[account(
-        mut,
-        seeds = [b"org_config", org_config.authority.as_ref()],
-        bump = org_config.bump
+        mut
     )]
     pub org_config: Account<'info, OrgConfig>,
 
@@ -268,9 +294,7 @@ pub struct FundEscrow<'info> {
 #[derive(Accounts)]
 pub struct SettleToVendor<'info> {
     #[account(
-        mut,
-        seeds = [b"org_config", org_config.authority.as_ref()],
-        bump = org_config.bump
+        mut
     )]
     pub org_config: Account<'info, OrgConfig>,
 
@@ -302,4 +326,26 @@ pub struct SettleToVendor<'info> {
 
     /// The invoice owner must authorize settlement
     pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(vendor_name: String)]
+pub struct RegisterVendor<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + VendorAccount::INIT_SPACE,
+        seeds = [b"vendor", org_config.key().as_ref(), vendor_name.as_bytes()],
+        bump
+    )]
+    pub vendor_account: Account<'info, VendorAccount>,
+
+    #[account(
+        has_one = authority
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
