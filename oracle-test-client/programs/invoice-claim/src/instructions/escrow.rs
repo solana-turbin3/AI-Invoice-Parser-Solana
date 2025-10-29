@@ -1,6 +1,47 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self};
+use anchor_spl::token::{self, Token};
 use crate::state::*;
+
+#[derive(Accounts)]
+pub struct FundEscrow<'info> {
+    #[account(
+        mut,
+        seeds = [b"org_config", org_config.authority.as_ref()],
+        bump = org_config.bump
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    #[account(
+        mut,
+        seeds = [b"invoice", authority.key().as_ref()],
+        bump,
+        has_one = authority @ InvoiceError::Unauthorized
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+
+    /// CHECK: PDA only used as signing authority
+    #[account(
+        seeds = [b"escrow_auth", invoice_account.key().as_ref()],
+        bump
+    )]
+    pub escrow_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: must equal invoice_account.authority (validated by constraint above)
+    pub authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    /// CHECK: payer's SPL token account (validated at runtime)
+    pub payer_ata: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: escrow SPL token account owned by escrow authority PDA
+    pub escrow_ata: UncheckedAccount<'info>,
+    /// CHECK: SPL token mint; key checked against OrgConfig
+    pub mint: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
 
 pub fn fund_escrow(ctx: Context<FundEscrow>) -> Result<()> {
     let cfg = &ctx.accounts.org_config;
@@ -15,16 +56,55 @@ pub fn fund_escrow(ctx: Context<FundEscrow>) -> Result<()> {
     require_keys_eq!(ctx.accounts.mint.key(), cfg.mint, InvoiceError::WrongMint);
 
     // Transfer tokens from payer to escrow
-    let cpi_accounts = anchor_spl::token::Transfer {
+       // Transfer tokens from payer to escrow
+    token::transfer( CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+     anchor_spl::token::Transfer {
         from: ctx.accounts.payer_ata.to_account_info(),
         to: ctx.accounts.escrow_ata.to_account_info(),
         authority: ctx.accounts.payer.to_account_info(),
-    };
-    let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
-    token::transfer(cpi_ctx, amount)?;
+    }),
+    amount)?;
 
     inv.status = InvoiceStatus::InEscrow;
     Ok(())
+}
+
+#[derive(Accounts)]
+pub struct SettleToVendor<'info> {
+    #[account(
+        mut
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    #[account(
+        mut,
+        seeds = [b"invoice", authority.key().as_ref()],
+        bump,
+        has_one = authority @ InvoiceError::Unauthorized
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+
+    /// CHECK: PDA only used as signing authority
+    #[account(
+        seeds = [b"escrow_auth", invoice_account.key().as_ref()],
+        bump
+    )]
+    pub escrow_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    /// CHECK: vendor's SPL token account (validated at runtime)
+    pub vendor_ata: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: escrow SPL token account owned by escrow authority PDA
+    pub escrow_ata: UncheckedAccount<'info>,
+    /// CHECK: SPL token mint
+    pub mint: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+
+    /// The invoice owner must authorize settlement
+    pub authority: Signer<'info>,
 }
 
 pub fn settle_to_vendor(ctx: Context<SettleToVendor>) -> Result<()> {
@@ -42,17 +122,13 @@ pub fn settle_to_vendor(ctx: Context<SettleToVendor>) -> Result<()> {
     let signer_seeds: &[&[u8]] = &[b"escrow_auth", invoice_key.as_ref(), &bump_seed];
     let signer = &[signer_seeds];
 
-    let cpi_accounts = anchor_spl::token::Transfer {
+    token::transfer(CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        anchor_spl::token::Transfer {
         from: ctx.accounts.escrow_ata.to_account_info(),
         to: ctx.accounts.vendor_ata.to_account_info(),
         authority: ctx.accounts.escrow_authority.to_account_info(),
-    };
-    let cpi_ctx = CpiContext::new_with_signer(
-        ctx.accounts.token_program.to_account_info(),
-        cpi_accounts,
-        signer,
-    );
-    token::transfer(cpi_ctx, amount)?;
+    },signer,),amount)?;
 
     inv.status = InvoiceStatus::Paid;
     Ok(())

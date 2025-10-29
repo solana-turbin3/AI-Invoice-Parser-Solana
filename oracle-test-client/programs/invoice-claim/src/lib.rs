@@ -8,7 +8,8 @@ mod state;
 mod instructions;
 
 pub use crate::state::*;
-// contexts live in state.rs to keep just `state` + `instructions`
+pub use crate::instructions::*;
+
 
 #[program]
 pub mod invoice_claim {
@@ -58,16 +59,9 @@ pub mod invoice_claim {
         instructions::org::org_init(ctx, treasury_vault, mint, per_invoice_cap, daily_cap, audit_rate_bps)
     }
 
-    pub fn set_caps(ctx: Context<SetCaps>, per_invoice_cap: u64, daily_cap: u64) -> Result<()> {
-        instructions::org::set_caps(ctx, per_invoice_cap, daily_cap)
-    }
-
-    pub fn set_pause(ctx: Context<SetPause>, paused: bool) -> Result<()> {
-        instructions::org::set_pause(ctx, paused)
-    }
-
-    pub fn set_oracle_signer(ctx: Context<SetOracleSigner>, oracle_signer: Pubkey) -> Result<()> {
-        instructions::org::set_oracle_signer(ctx, oracle_signer)
+    // Update Org Config
+    pub fn update_org_config(ctx: Context<UpdateOrgConfig>, update_args: UpdateOrgConfigArgs) -> Result<()> {
+        instructions::org::update_org_config(ctx, update_args)
     }
 
     // Escrow MVP
