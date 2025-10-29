@@ -8,6 +8,7 @@ pub struct InvoiceRequest {
     pub ipfs_hash: String,
     pub status: RequestStatus,
     pub timestamp: i64,
+    pub amount: u64,
 }
 
 #[account]

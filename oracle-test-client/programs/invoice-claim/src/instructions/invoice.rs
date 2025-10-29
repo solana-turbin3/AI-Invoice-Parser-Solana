@@ -4,13 +4,14 @@ use crate::state::*;
 pub fn request_invoice_extraction(
     ctx: Context<RequestExtraction>,
     ipfs_hash: String,
+    amount: u64
 ) -> Result<()> {
     let request = &mut ctx.accounts.invoice_request;
     request.authority = ctx.accounts.authority.key();
     request.ipfs_hash = ipfs_hash.clone();
     request.status = RequestStatus::Pending;
     request.timestamp = Clock::get()?.unix_timestamp;
-
+    request.amount = amount;
     msg!("Invoice extraction requested for IPFS: {}", ipfs_hash);
     Ok(())
 }

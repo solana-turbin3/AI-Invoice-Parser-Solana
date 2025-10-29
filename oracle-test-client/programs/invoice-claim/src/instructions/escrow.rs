@@ -2,11 +2,12 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self};
 use crate::state::*;
 
-pub fn fund_escrow(ctx: Context<FundEscrow>, amount: u64) -> Result<()> {
+pub fn fund_escrow(ctx: Context<FundEscrow>) -> Result<()> {
     let cfg = &ctx.accounts.org_config;
     require!(!cfg.paused, InvoiceError::OrgPaused);
 
     let inv = &mut ctx.accounts.invoice_account;
+    let amount = inv.amount;
     require!(inv.status == InvoiceStatus::Validated, InvoiceError::InvalidStatus);
     require!(amount <= cfg.per_invoice_cap, InvoiceError::CapExceeded);
 
@@ -26,12 +27,13 @@ pub fn fund_escrow(ctx: Context<FundEscrow>, amount: u64) -> Result<()> {
     Ok(())
 }
 
-pub fn settle_to_vendor(ctx: Context<SettleToVendor>, amount: u64) -> Result<()> {
+pub fn settle_to_vendor(ctx: Context<SettleToVendor>) -> Result<()> {
     let cfg = &ctx.accounts.org_config;
     require!(!cfg.paused, InvoiceError::OrgPaused);
 
     let inv = &mut ctx.accounts.invoice_account;
     require!(inv.status == InvoiceStatus::InEscrow, InvoiceError::InvalidStatus);
+    let amount = inv.amount;
 
     // Sign with escrow authority PDA derived from invoice key
     let bump = ctx.bumps.escrow_authority;

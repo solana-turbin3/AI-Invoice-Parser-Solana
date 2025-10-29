@@ -16,6 +16,7 @@ pub struct InvoiceRequest {
     pub ipfs_hash: String,
     pub status: RequestStatus,
     pub timestamp: i64,
+    pub amount: u64,
 }
 
 impl InvoiceRequest {
@@ -68,12 +69,23 @@ impl InvoiceRequest {
             data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
             data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]
         ]);
+        offset +=8;
+
+        // Read amount (8 bytes)
+        if offset + 8 > data.len() {
+            return Err("Not enough data for amount".into());
+        }
+        let amount = u64::from_le_bytes([
+            data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+            data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]
+        ]);
 
         Ok(InvoiceRequest {
             authority,
             ipfs_hash,
             status,
             timestamp,
+            amount
         })
     }
 }

@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+#![allow(deprecated)]
 use anchor_lang::prelude::*;
 
 declare_id!("5zUiSUHNQCtxcSYtrbx7QqxCHLFBZy6Pgxt6w1bLKa9u");
@@ -13,8 +15,8 @@ pub mod invoice_claim {
     use super::*;
 
     // Invoice request + OCR fulfillment
-    pub fn request_invoice_extraction(ctx: Context<RequestExtraction>, ipfs_hash: String) -> Result<()> {
-        instructions::invoice::request_invoice_extraction(ctx, ipfs_hash)
+    pub fn request_invoice_extraction(ctx: Context<RequestExtraction>, ipfs_hash: String,amount: u64) -> Result<()> {
+        instructions::invoice::request_invoice_extraction(ctx, ipfs_hash,amount)
     }
 
     pub fn process_extraction_result(
@@ -69,12 +71,12 @@ pub mod invoice_claim {
     }
 
     // Escrow MVP
-    pub fn fund_escrow(ctx: Context<FundEscrow>, amount: u64) -> Result<()> {
-        instructions::escrow::fund_escrow(ctx, amount)
+    pub fn fund_escrow(ctx: Context<FundEscrow>) -> Result<()> {
+        instructions::escrow::fund_escrow(ctx)
     }
 
-    pub fn settle_to_vendor(ctx: Context<SettleToVendor>, amount: u64) -> Result<()> {
-        instructions::escrow::settle_to_vendor(ctx, amount)
+    pub fn settle_to_vendor(ctx: Context<SettleToVendor>) -> Result<()> {
+        instructions::escrow::settle_to_vendor(ctx)
     }
 
     //Vendor Management
