@@ -3,4 +3,5 @@ pub mod invoice;
 pub mod payments;
 pub mod escrow;
 pub mod close;
+pub mod vendor;
 

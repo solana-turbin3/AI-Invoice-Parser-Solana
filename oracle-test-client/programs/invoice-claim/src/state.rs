@@ -125,7 +125,19 @@ pub struct RequestExtraction<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(vendor_name: String)]  //needed for vendor PDA derivation
 pub struct ProcessResult<'info> {
+    // OrgConfig for oracle authorization and invoice counter
+    #[account(mut)]
+    pub org_config: Account<'info, OrgConfig>,
+
+    // VendorAccount to validate vendor is registered and active
+    #[account(
+        seeds = [b"vendor", org_config.key().as_ref(), vendor_name.as_bytes()],
+        bump
+    )]
+    pub vendor_account: Account<'info, VendorAccount>,
+
     #[account(
         mut,
         seeds = [b"request", invoice_request.authority.as_ref()],
@@ -147,6 +159,7 @@ pub struct ProcessResult<'info> {
 
     pub system_program: Program<'info, System>,
 }
+
 
 #[derive(Accounts)]
 pub struct ProcessPayment<'info> {
@@ -328,6 +341,11 @@ pub struct SettleToVendor<'info> {
     pub authority: Signer<'info>,
 }
 
+
+/// ALL VENDOR IX STATE GOES HERE
+/// 
+/// 
+/// ALL VENDOR IX STATE GOES HERE
 #[derive(Accounts)]
 #[instruction(vendor_name: String)]
 pub struct RegisterVendor<'info> {
@@ -348,4 +366,21 @@ pub struct RegisterVendor<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ManageVendor<'info> {
+    #[account(
+        mut,
+        seeds = [b"vendor", org_config.key().as_ref(), vendor_account.vendor_name.as_bytes()],
+        bump
+    )]
+    pub vendor_account: Account<'info, VendorAccount>,
+
+    #[account(
+        has_one = authority @ InvoiceError::Unauthorized
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    pub authority: Signer<'info>,
 }

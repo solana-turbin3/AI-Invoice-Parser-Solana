@@ -76,4 +76,27 @@ pub mod invoice_claim {
     pub fn settle_to_vendor(ctx: Context<SettleToVendor>, amount: u64) -> Result<()> {
         instructions::escrow::settle_to_vendor(ctx, amount)
     }
+
+    //Vendor Management
+    pub fn register_vendor(
+        ctx: Context<RegisterVendor>,
+        vendor_name: String,
+        wallet: Pubkey,
+    ) -> Result<()> {
+        instructions::vendor::register_vendor(ctx, vendor_name, wallet)
+    }
+
+    pub fn deactivate_vendor(ctx: Context<ManageVendor>) -> Result<()> {
+        instructions::vendor::deactivate_vendor(ctx)
+    }
+
+    pub fn activate_vendor(ctx: Context<ManageVendor>) -> Result<()> {
+        instructions::vendor::activate_vendor(ctx)
+    }
+
+    pub fn update_vendor_wallet(ctx: Context<ManageVendor>, new_wallet: Pubkey) -> Result<()> {
+        instructions::vendor::update_vendor_wallet(ctx, new_wallet)
+    }
+
+
 }

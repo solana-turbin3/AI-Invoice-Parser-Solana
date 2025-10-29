@@ -21,6 +21,29 @@ pub fn process_extraction_result(
     amount: u64,
     due_date: i64,
 ) -> Result<()> {
+
+    let org_config = &mut ctx.accounts.org_config;
+
+    // only authorized oracle can submit(this may backfire during testing :( )
+    require_keys_eq!(
+        ctx.accounts.payer.key(),
+        org_config.oracle_signer,
+        InvoiceError::Unauthorized
+    );
+
+    // Validate extracted data
+    require!(amount > 0, InvoiceError::InvalidAmount);
+    require!(amount <= org_config.per_invoice_cap, InvoiceError::CapExceeded);
+    require!(!vendor_name.is_empty(), InvoiceError::InvalidVendor);
+    require!(vendor_name.len() <= 50, InvoiceError::InvalidVendor);
+
+    let current_time = Clock::get()?.unix_timestamp;
+    require!(due_date > current_time, InvoiceError::InvalidDueDate);
+
+    // Verify vendor is registered and active (CRITICAL for whitelist)
+    let vendor = &ctx.accounts.vendor_account;
+    require!(vendor.is_active, InvoiceError::VendorInactive);
+    require_keys_eq!(vendor.org, org_config.key(), InvoiceError::WrongOrg);
     let invoice = &mut ctx.accounts.invoice_account;
     let request = &mut ctx.accounts.invoice_request;
 
