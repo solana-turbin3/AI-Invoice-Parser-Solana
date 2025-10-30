@@ -4,18 +4,20 @@ use anchor_lang::prelude::*;
 
 declare_id!("5zUiSUHNQCtxcSYtrbx7QqxCHLFBZy6Pgxt6w1bLKa9u");
 
+pub const CALLBACK_VRF_DISCRIMINATOR: [u8; 7] = *b"clbrand"; 
 mod state;
 mod instructions;
 
 pub use crate::state::*;
-// contexts live in state.rs to keep just `state` + `instructions`
+pub use crate::instructions::*;
+
 
 #[program]
 pub mod invoice_claim {
     use super::*;
 
     // Invoice request + OCR fulfillment
-    pub fn request_invoice_extraction(ctx: Context<RequestExtraction>, ipfs_hash: String,amount: u64) -> Result<()> {
+    pub fn request_invoice_extraction(ctx: Context<RequestExtraction>, ipfs_hash: String, amount: u64) -> Result<()> {
         instructions::invoice::request_invoice_extraction(ctx, ipfs_hash,amount)
     }
 
@@ -26,6 +28,15 @@ pub mod invoice_claim {
         due_date: i64,
     ) -> Result<()> {
         instructions::invoice::process_extraction_result(ctx, vendor_name, amount, due_date)
+    }
+
+    pub fn request_invoice_audit_vrf(ctx: Context<RequestInvoiceAuditVrf>, client_seed: u8) -> Result<()> {
+        instructions::vrf::request_invoice_audit_vrf(ctx, client_seed)
+    }
+
+    #[instruction(discriminator = &CALLBACK_VRF_DISCRIMINATOR)]
+    pub fn callback_invoice_vrf(ctx: Context<CallbackInvoiceVrf>, randomness: [u8; 32]) -> Result<()> {
+        instructions::vrf::callback_invoice_vrf(ctx, randomness)
     }
 
     // Status-only payment flow
@@ -58,16 +69,9 @@ pub mod invoice_claim {
         instructions::org::org_init(ctx, treasury_vault, mint, per_invoice_cap, daily_cap, audit_rate_bps)
     }
 
-    pub fn set_caps(ctx: Context<SetCaps>, per_invoice_cap: u64, daily_cap: u64) -> Result<()> {
-        instructions::org::set_caps(ctx, per_invoice_cap, daily_cap)
-    }
-
-    pub fn set_pause(ctx: Context<SetPause>, paused: bool) -> Result<()> {
-        instructions::org::set_pause(ctx, paused)
-    }
-
-    pub fn set_oracle_signer(ctx: Context<SetOracleSigner>, oracle_signer: Pubkey) -> Result<()> {
-        instructions::org::set_oracle_signer(ctx, oracle_signer)
+    // Update Org Config
+    pub fn update_org_config(ctx: Context<UpdateOrgConfig>, update_args: UpdateOrgConfigArgs) -> Result<()> {
+        instructions::org::update_org_config(ctx, update_args)
     }
 
     // Escrow MVP

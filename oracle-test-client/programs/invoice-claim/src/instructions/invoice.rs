@@ -1,19 +1,81 @@
 use anchor_lang::prelude::*;
 use crate::state::*;
 
+#[derive(Accounts)]
+#[instruction(ipfs_hash: String)]
+pub struct RequestExtraction<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + InvoiceRequest::INIT_SPACE,
+        seeds = [b"request", authority.key().as_ref()],
+        bump
+    )]
+    pub invoice_request: Account<'info, InvoiceRequest>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 pub fn request_invoice_extraction(
     ctx: Context<RequestExtraction>,
     ipfs_hash: String,
     amount: u64
 ) -> Result<()> {
-    let request = &mut ctx.accounts.invoice_request;
-    request.authority = ctx.accounts.authority.key();
-    request.ipfs_hash = ipfs_hash.clone();
-    request.status = RequestStatus::Pending;
-    request.timestamp = Clock::get()?.unix_timestamp;
-    request.amount = amount;
+    require!(!ipfs_hash.is_empty(), InvoiceError::InvalidIPFSHash);
+    require!(amount > 0, InvoiceError::InvalidAmount);
+
+    ctx.accounts.invoice_request.set_inner(InvoiceRequest{
+        authority: ctx.accounts.authority.key(),
+        ipfs_hash: ipfs_hash.clone(),
+        status: RequestStatus::Pending,
+        timestamp: Clock::get()?.unix_timestamp,
+        amount
+    });
+
     msg!("Invoice extraction requested for IPFS: {}", ipfs_hash);
     Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(vendor_name: String)]  //needed for vendor PDA derivation
+pub struct ProcessResult<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    // OrgConfig for oracle authorization and invoice counter
+    #[account(
+        mut,
+        seeds = [b"org_config", org_config.authority.as_ref()],
+        bump
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    // VendorAccount to validate vendor is registered and active
+    #[account(
+        seeds = [b"vendor", org_config.key().as_ref(), vendor_name.as_bytes()],
+        bump
+    )]
+    pub vendor_account: Account<'info, VendorAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"request", invoice_request.authority.as_ref()],
+        bump
+    )]
+    pub invoice_request: Account<'info, InvoiceRequest>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + InvoiceAccount::INIT_SPACE,
+        seeds = [b"invoice", invoice_request.authority.as_ref()],
+        bump
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+
+    pub system_program: Program<'info, System>,
 }
 
 pub fn process_extraction_result(
@@ -48,13 +110,16 @@ pub fn process_extraction_result(
     let invoice = &mut ctx.accounts.invoice_account;
     let request = &mut ctx.accounts.invoice_request;
 
-    invoice.authority = request.authority;
-    invoice.vendor_name = vendor_name;
-    invoice.amount = amount;
-    invoice.due_date = due_date;
-    invoice.ipfs_hash = request.ipfs_hash.clone();
-    invoice.status = InvoiceStatus::Validated;
-    invoice.timestamp = Clock::get()?.unix_timestamp;
+    invoice.set_inner(InvoiceAccount{
+        authority: invoice.authority,
+        vendor_name,
+        amount,
+        due_date,
+        ipfs_hash: request.ipfs_hash.clone(),
+        status: InvoiceStatus::Validated,
+        timestamp: Clock::get()?.unix_timestamp,
+        vendor: ctx.accounts.vendor_account.key(),
+    });
 
     request.status = RequestStatus::Completed;
     msg!("Invoice processed: {} - ${}", invoice.vendor_name, invoice.amount);

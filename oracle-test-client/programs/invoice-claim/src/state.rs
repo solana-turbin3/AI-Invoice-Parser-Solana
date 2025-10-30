@@ -42,6 +42,7 @@ pub struct OrgConfig {
     pub paused: bool,
     pub invoice_counter: u64,
     pub version: u8,
+    pub bump: u8
 }
 
 
@@ -66,9 +67,20 @@ pub enum RequestStatus {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
 pub enum InvoiceStatus {
+    ReadyForPayment,
+    AuditPending,
     Validated,
     InEscrow,
     Paid,
+}
+
+// Update Org Config Args
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default)]
+pub struct UpdateOrgConfigArgs {
+    pub per_invoice_cap: Option<u64>,
+    pub daily_cap: Option<u64>,
+    pub paused: Option<bool>,
+    pub oracle_signer: Option<Pubkey>,
 }
 
 #[error_code]
@@ -101,287 +113,9 @@ pub enum InvoiceError {
     InvalidAuditRate,
     #[msg("Wrong organization")]
     WrongOrg,
+    #[msg("Invalid wallet")]
+    InvalidWallet,
+    #[msg("Invalid IPFS hash")]
+    InvalidIPFSHash,
 }
 
-// ========== ACCOUNT CONTEXTS (moved here to keep only state + instructions) ==========
-
-use anchor_spl::token::Token;
-
-#[derive(Accounts)]
-#[instruction(ipfs_hash: String)]
-pub struct RequestExtraction<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + InvoiceRequest::INIT_SPACE,
-        seeds = [b"request", authority.key().as_ref()],
-        bump
-    )]
-    pub invoice_request: Account<'info, InvoiceRequest>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(vendor_name: String)]  //needed for vendor PDA derivation
-pub struct ProcessResult<'info> {
-    // OrgConfig for oracle authorization and invoice counter
-    #[account(mut)]
-    pub org_config: Account<'info, OrgConfig>,
-
-    // VendorAccount to validate vendor is registered and active
-    #[account(
-        seeds = [b"vendor", org_config.key().as_ref(), vendor_name.as_bytes()],
-        bump
-    )]
-    pub vendor_account: Account<'info, VendorAccount>,
-
-    #[account(
-        mut,
-        seeds = [b"request", invoice_request.authority.as_ref()],
-        bump
-    )]
-    pub invoice_request: Account<'info, InvoiceRequest>,
-
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + InvoiceAccount::INIT_SPACE,
-        seeds = [b"invoice", invoice_request.authority.as_ref()],
-        bump
-    )]
-    pub invoice_account: Account<'info, InvoiceAccount>,
-
-    #[account(mut)]
-    pub payer: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-
-#[derive(Accounts)]
-pub struct ProcessPayment<'info> {
-    #[account(
-        mut,
-        seeds = [b"invoice", authority.key().as_ref()],
-        bump,
-        has_one = authority
-    )]
-    pub invoice_account: Account<'info, InvoiceAccount>,
-
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct CompletePayment<'info> {
-    #[account(
-        mut,
-        seeds = [b"invoice", authority.key().as_ref()],
-        bump,
-        has_one = authority
-    )]
-    pub invoice_account: Account<'info, InvoiceAccount>,
-
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct CloseInvoice<'info> {
-    #[account(
-        mut,
-        close = authority,
-        seeds = [b"invoice", authority.key().as_ref()],
-        bump,
-        has_one = authority
-    )]
-    pub invoice_account: Account<'info, InvoiceAccount>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct CloseRequest<'info> {
-    #[account(
-        mut,
-        close = authority,
-        seeds = [b"request", authority.key().as_ref()],
-        bump,
-        has_one = authority
-    )]
-    pub invoice_request: Account<'info, InvoiceRequest>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-}
-
-// Org config
-
-#[derive(Accounts)]
-pub struct OrgInit<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + OrgConfig::INIT_SPACE,
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct SetCaps<'info> {
-    #[account(
-        mut,
-        has_one = authority @ InvoiceError::Unauthorized,
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct SetPause<'info> {
-    #[account(
-        mut,
-        has_one = authority @ InvoiceError::Unauthorized,
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct SetOracleSigner<'info> {
-    #[account(
-        mut,
-        has_one = authority @ InvoiceError::Unauthorized,
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-    pub authority: Signer<'info>,
-}
-
-// Escrow MVP
-
-#[derive(Accounts)]
-pub struct FundEscrow<'info> {
-    #[account(
-        mut
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-
-    #[account(
-        mut,
-        seeds = [b"invoice", authority.key().as_ref()],
-        bump,
-        has_one = authority @ InvoiceError::Unauthorized
-    )]
-    pub invoice_account: Account<'info, InvoiceAccount>,
-
-    /// CHECK: PDA only used as signing authority
-    #[account(
-        seeds = [b"escrow_auth", invoice_account.key().as_ref()],
-        bump
-    )]
-    pub escrow_authority: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    /// CHECK: must equal invoice_account.authority (validated by constraint above)
-    pub authority: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: payer's SPL token account (validated at runtime)
-    pub payer_ata: UncheckedAccount<'info>,
-    #[account(mut)]
-    /// CHECK: escrow SPL token account owned by escrow authority PDA
-    pub escrow_ata: UncheckedAccount<'info>,
-    /// CHECK: SPL token mint; key checked against OrgConfig
-    pub mint: UncheckedAccount<'info>,
-
-    pub token_program: Program<'info, Token>,
-}
-
-#[derive(Accounts)]
-pub struct SettleToVendor<'info> {
-    #[account(
-        mut
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-
-    #[account(
-        mut,
-        seeds = [b"invoice", authority.key().as_ref()],
-        bump,
-        has_one = authority @ InvoiceError::Unauthorized
-    )]
-    pub invoice_account: Account<'info, InvoiceAccount>,
-
-    /// CHECK: PDA only used as signing authority
-    #[account(
-        seeds = [b"escrow_auth", invoice_account.key().as_ref()],
-        bump
-    )]
-    pub escrow_authority: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    /// CHECK: vendor's SPL token account (validated at runtime)
-    pub vendor_ata: UncheckedAccount<'info>,
-    #[account(mut)]
-    /// CHECK: escrow SPL token account owned by escrow authority PDA
-    pub escrow_ata: UncheckedAccount<'info>,
-    /// CHECK: SPL token mint
-    pub mint: UncheckedAccount<'info>,
-
-    pub token_program: Program<'info, Token>,
-
-    /// The invoice owner must authorize settlement
-    pub authority: Signer<'info>,
-}
-
-
-/// ALL VENDOR IX STATE GOES HERE
-/// 
-/// 
-/// ALL VENDOR IX STATE GOES HERE
-#[derive(Accounts)]
-#[instruction(vendor_name: String)]
-pub struct RegisterVendor<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + VendorAccount::INIT_SPACE,
-        seeds = [b"vendor", org_config.key().as_ref(), vendor_name.as_bytes()],
-        bump
-    )]
-    pub vendor_account: Account<'info, VendorAccount>,
-
-    #[account(
-        has_one = authority
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct ManageVendor<'info> {
-    #[account(
-        mut,
-        seeds = [b"vendor", org_config.key().as_ref(), vendor_account.vendor_name.as_bytes()],
-        bump
-    )]
-    pub vendor_account: Account<'info, VendorAccount>,
-
-    #[account(
-        has_one = authority @ InvoiceError::Unauthorized
-    )]
-    pub org_config: Account<'info, OrgConfig>,
-
-    pub authority: Signer<'info>,
-}

@@ -1,6 +1,19 @@
 use anchor_lang::prelude::*;
 use crate::state::*;
 
+#[derive(Accounts)]
+pub struct ProcessPayment<'info> {
+    #[account(
+        mut,
+        seeds = [b"invoice", authority.key().as_ref()],
+        bump,
+        has_one = authority
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+
+    pub authority: Signer<'info>,
+}
+
 pub fn process_invoice_payment(ctx: Context<ProcessPayment>) -> Result<()> {
     let invoice = &ctx.accounts.invoice_account;
     require!(invoice.status == InvoiceStatus::Validated, InvoiceError::InvalidStatus);
@@ -17,6 +30,19 @@ pub fn process_invoice_payment(ctx: Context<ProcessPayment>) -> Result<()> {
     invoice_mut.status = InvoiceStatus::InEscrow;
     msg!("Invoice moved to escrow");
     Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CompletePayment<'info> {
+    #[account(
+        mut,
+        seeds = [b"invoice", authority.key().as_ref()],
+        bump,
+        has_one = authority
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+
+    pub authority: Signer<'info>,
 }
 
 pub fn complete_payment(ctx: Context<CompletePayment>) -> Result<()> {
