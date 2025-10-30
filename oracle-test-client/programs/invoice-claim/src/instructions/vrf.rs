@@ -47,11 +47,18 @@ use crate::state::*;
     }
 
     /// STEP 2: Callback once randomness is ready
-    pub fn callback_invoice_vrf(ctx: Context<CallbackInvoiceVrf>, randomness: [u8; 32]) -> Result<()> {
-        msg!("Received VRF callback |deciding audit outcome...");
+pub fn callback_invoice_vrf(ctx: Context<CallbackInvoiceVrf>, randomness: [u8; 32]) -> Result<()> {
+    msg!("Received VRF callback |deciding audit outcome...");
 
-        let invoice = &mut ctx.accounts.invoice_account;
-        let org_config = &ctx.accounts.org_config;
+    let invoice = &mut ctx.accounts.invoice_account;
+    let org_config = &ctx.accounts.org_config;
+
+    // Only apply VRF outcome immediately after validation.
+    // Prevents late/duplicate callbacks from overriding post-VRF states.
+    require!(
+        invoice.status == InvoiceStatus::Validated,
+        InvoiceError::InvalidStatus
+    );
 
         // Convert bytes → number
         let random_value = u64::from_le_bytes(randomness[..8].try_into().unwrap());
@@ -105,13 +112,15 @@ pub struct RequestInvoiceAuditVrf<'info> {
 
 #[derive(Accounts)]
 pub struct CallbackInvoiceVrf<'info> {
-    /// Ensures call comes from VRF program identity
+    /// CHECK: VRF program identity (no signature during CPI). The address
+    /// constraint ensures the caller is the VRF program identity.
     #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
-    pub vrf_program_identity: Signer<'info>,
+    pub vrf_program_identity: UncheckedAccount<'info>,
 
-    #[account(mut)]
-    pub org_config: Account<'info, OrgConfig>,
-
+    // Must match the order provided in `accounts_metas` when the request was made
+    // 1) invoice_account (writable)
     #[account(mut)]
     pub invoice_account: Account<'info, InvoiceAccount>,
+    // 2) org_config (readonly)
+    pub org_config: Account<'info, OrgConfig>,
 }

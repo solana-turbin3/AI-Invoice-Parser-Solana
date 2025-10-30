@@ -49,7 +49,10 @@ pub fn fund_escrow(ctx: Context<FundEscrow>) -> Result<()> {
 
     let inv = &mut ctx.accounts.invoice_account;
     let amount = inv.amount;
-    require!(inv.status == InvoiceStatus::Validated, InvoiceError::InvalidStatus);
+    require!(
+        inv.status == InvoiceStatus::ReadyForPayment,
+        InvoiceError::InvalidStatus
+    );
     require!(amount <= cfg.per_invoice_cap, InvoiceError::CapExceeded);
 
     // Ensure mint matches configuration

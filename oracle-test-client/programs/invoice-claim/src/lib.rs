@@ -2,7 +2,7 @@
 #![allow(deprecated)]
 use anchor_lang::prelude::*;
 
-declare_id!("5zUiSUHNQCtxcSYtrbx7QqxCHLFBZy6Pgxt6w1bLKa9u");
+declare_id!("CwD9tU4A7c7SS5b55ZtTcEPGA8svJQUhfdCbdoaSF1Tx");
 
 pub const CALLBACK_VRF_DISCRIMINATOR: [u8; 7] = *b"clbrand"; 
 mod state;
@@ -55,6 +55,11 @@ pub mod invoice_claim {
 
     pub fn close_request(ctx: Context<CloseRequest>) -> Result<()> {
         instructions::close::close_request(ctx)
+    }
+
+    // Manual review decision after VRF selects invoice for audit
+    pub fn audit_decide(ctx: Context<AuditDecide>, approve: bool) -> Result<()> {
+        instructions::invoice::audit_decide(ctx, approve)
     }
 
     // Org config

@@ -72,6 +72,7 @@ pub enum InvoiceStatus {
     Validated,
     InEscrow,
     Paid,
+    Rejected,
 }
 
 // Update Org Config Args
@@ -118,4 +119,3 @@ pub enum InvoiceError {
     #[msg("Invalid IPFS hash")]
     InvalidIPFSHash,
 }
-
