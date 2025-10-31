@@ -87,7 +87,7 @@ pub fn process_extraction_result(
 
     let org_config = &mut ctx.accounts.org_config;
 
-    // only authorized oracle can submit(this may backfire during testing :( )
+    // Only the configured oracle_signer may submit; this can complicate test setup.
     require_keys_eq!(
         ctx.accounts.payer.key(),
         org_config.oracle_signer,
@@ -111,7 +111,7 @@ pub fn process_extraction_result(
     let request = &mut ctx.accounts.invoice_request;
 
     invoice.set_inner(InvoiceAccount{
-        authority: invoice.authority,
+        authority: request.authority,
         vendor_name,
         amount,
         due_date,
@@ -123,5 +123,45 @@ pub fn process_extraction_result(
 
     request.status = RequestStatus::Completed;
     msg!("Invoice processed: {} - ${}", invoice.vendor_name, invoice.amount);
+    Ok(())
+}
+// Manual review decision after VRF selects the invoice for audit
+#[derive(Accounts)]
+pub struct AuditDecide<'info> {
+    #[account(mut)]
+    pub reviewer: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"org_config", org_config.authority.as_ref()],
+        bump
+    )]
+    pub org_config: Account<'info, OrgConfig>,
+
+    #[account(
+        mut,
+        seeds = [b"invoice", invoice_account.authority.as_ref()],
+        bump
+    )]
+    pub invoice_account: Account<'info, InvoiceAccount>,
+}
+
+pub fn audit_decide(ctx: Context<AuditDecide>, approve: bool) -> Result<()> {
+    let org = &ctx.accounts.org_config;
+    // Only org authority or oracle signer can decide
+    require!(
+        ctx.accounts.reviewer.key() == org.authority || ctx.accounts.reviewer.key() == org.oracle_signer,
+        InvoiceError::Unauthorized
+    );
+
+    let invoice = &mut ctx.accounts.invoice_account;
+    require!(invoice.status == InvoiceStatus::AuditPending, InvoiceError::InvalidStatus);
+
+    invoice.status = if approve {
+        InvoiceStatus::ReadyForPayment
+    } else {
+        InvoiceStatus::Rejected
+    };
+
     Ok(())
 }

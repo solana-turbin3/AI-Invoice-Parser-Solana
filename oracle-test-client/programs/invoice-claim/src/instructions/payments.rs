@@ -16,7 +16,10 @@ pub struct ProcessPayment<'info> {
 
 pub fn process_invoice_payment(ctx: Context<ProcessPayment>) -> Result<()> {
     let invoice = &ctx.accounts.invoice_account;
-    require!(invoice.status == InvoiceStatus::Validated, InvoiceError::InvalidStatus);
+    require!(
+        invoice.status == InvoiceStatus::ReadyForPayment,
+        InvoiceError::InvalidStatus
+    );
 
     let current_time = Clock::get()?.unix_timestamp;
     require!(current_time <= invoice.due_date, InvoiceError::PaymentOverdue);
